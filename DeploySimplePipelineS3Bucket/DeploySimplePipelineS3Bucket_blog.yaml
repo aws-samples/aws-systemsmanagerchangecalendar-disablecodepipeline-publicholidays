@@ -1,0 +1,256 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  CodePipelineName:
+    Type: String
+    Description: (Required) Enter the name of the AWS CodePipeline pipeline to be created
+  PublicSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: (Required) Provide the public SubnetId to launch the EC2 instances. Subnet must have the internet access
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: (Required) Provide the Security Group Id to attach with the instances. Secuity Group must allow Ingress/Engress access on port 80 & 443
+  AmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: (Required) AMI Id used to launch the instances. This template uses AmazonLinux2 AMI using SSM parameter Store. Do not modify this value.
+  EC2KeypairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: (Required) Provide the name of the EC2 Keypair
+Resources:
+  SourceS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      VersioningConfiguration: 
+        Status: Enabled
+  CodePipelineArtifactStoreS3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn: SourceS3Bucket
+    Properties: 
+      VersioningConfiguration: 
+        Status: Suspended
+  CodePipelineArtifactStoreS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: CodePipelineArtifactStoreS3Bucket
+    Properties:
+      Bucket: !Ref CodePipelineArtifactStoreS3Bucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Sid: DenyUnEncryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Join [ '', [ !GetAtt CodePipelineArtifactStoreS3Bucket.Arn, '/*' ] ]
+            Condition:
+              StringNotEquals: 
+                s3:x-amz-server-side-encryption: aws:kms
+          -
+            Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: !Join [ '', [ !GetAtt CodePipelineArtifactStoreS3Bucket.Arn, '/*' ] ]
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+  EC2InstanceProfileRoleForCodeDeploy:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+      Policies:
+        - PolicyName: AllowSampleAppUploadFromEC2
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 's3:PutObject'
+                Effect: Allow
+                Resource:
+                  - !GetAtt 
+                    - SourceS3Bucket
+                    - Arn
+                  - !Sub 'arn:aws:s3:::${SourceS3Bucket}/*'
+  EC2InstanceprofileforCodeDeploy:      
+    Type: AWS::IAM::InstanceProfile
+    DependsOn: EC2InstanceProfileRoleForCodeDeploy
+    Properties: 
+      Roles: 
+        - !Ref EC2InstanceProfileRoleForCodeDeploy
+  CodeDeployServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "codedeploy.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
+  CodePipelineServiceRole:
+    Type: "AWS::IAM::Role"
+    DependsOn: CodeDeployServiceRole
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "codepipeline.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: CodeDeployPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - "codedeploy:CreateDeployment"
+                  - "codedeploy:GetApplication"
+                  - "codedeploy:GetApplicationRevision"
+                  - "codedeploy:GetDeployment"
+                  - "codedeploy:GetDeploymentConfig"
+                  - "codedeploy:RegisterApplicationRevision"
+                Effect: Allow
+                Resource: '*'
+        - PolicyName: S3Permissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - "s3:PutObject"
+                  - "s3:GetObjectAcl"
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:GetBucketVersioning"
+                  - "s3:GetBucketAcl"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObjectVersion"
+                Effect: Allow
+                Resource: '*'
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: SourceS3Bucket
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties: 
+      IamInstanceProfile: !Ref EC2InstanceprofileforCodeDeploy
+      ImageId: !Ref AmiId
+      InstanceType: t2.micro
+      KeyName: !Ref EC2KeypairName
+      SecurityGroupIds: 
+        - !Ref SecurityGroupId
+      SubnetId: !Ref PublicSubnetId
+      Tags: 
+        - Key: Name
+          Value: CodePipelineBlog
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+            #!/bin/bash -xe
+            yum -y update
+            yum install -y ruby
+            yum install -y aws-cli
+            cd /home/ec2-user
+            #Downloading & Installing CodeDeploy Agent as per https://docs.aws.amazon.com/codepipeline/latest/userguide/tutorials-simple-s3.html#S3-create-instances
+            aws s3 cp s3://aws-codedeploy-${AWS::Region}/latest/install . --region ${AWS::Region}
+            chmod +x ./install
+            ./install auto
+            #Downloading & Uploading to S3 as SampleApp_Linux.zip as per the article https://docs.aws.amazon.com/codepipeline/latest/userguide/tutorials-simple-s3.html
+            wget https://docs.aws.amazon.com/codepipeline/latest/userguide/samples/SampleApp_Linux.zip
+            aws s3 cp SampleApp_Linux.zip s3://${SourceS3Bucket} --region ${AWS::Region}
+            #Sending signal to CloudFormation
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
+  CodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    DependsOn: EC2Instance
+    Properties: 
+      ApplicationName: CodePipeBlogSampleApplication
+      ComputePlatform: Server
+  DeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    DependsOn: CodeDeployApplication
+    Properties: 
+      ApplicationName: !Ref CodeDeployApplication
+      DeploymentGroupName: MyDemoDeploymentGroup
+      DeploymentConfigName: CodeDeployDefault.AllAtOnce
+      DeploymentStyle: 
+          DeploymentOption: WITHOUT_TRAFFIC_CONTROL
+          DeploymentType: IN_PLACE
+      Ec2TagFilters: 
+        - Key: Name 
+          Value: CodePipelineBlog
+          Type: KEY_AND_VALUE
+      ServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
+  SampleCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: DeploymentGroup
+    Properties: 
+      ArtifactStore: 
+        Type: S3
+        Location: !Ref CodePipelineArtifactStoreS3Bucket
+      Name: !Ref CodePipelineName
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      Stages: 
+        - Name: Source 
+          Actions: 
+            - Name: Source
+              ActionTypeId: 
+                Category: Source 
+                Owner: AWS 
+                Version: 1 
+                Provider: S3 
+              OutputArtifacts: 
+                - Name: SourceArtifact 
+              Configuration:
+                PollForSourceChanges: 'false'
+                S3Bucket: !Ref SourceS3Bucket 
+                S3ObjectKey: SampleApp_Linux.zip 
+        - Name: Deploy 
+          Actions: 
+            - Name: Deploy
+              ActionTypeId: 
+                Category: Deploy 
+                Owner: AWS 
+                Version: 1 
+                Provider: CodeDeploy
+              Configuration: 
+                ApplicationName: !Ref CodeDeployApplication
+                DeploymentGroupName: !Ref DeploymentGroup
+              InputArtifacts:
+                - Name: SourceArtifact
+Outputs:
+  SourceS3BucketARN:
+    Description: "Source S3 Bucket"
+    Value: !GetAtt SourceS3Bucket.Arn
+    Export:
+      Name: SourceS3BucketARN
+  EC2InstancePublicDNSName:
+    Description: Public DNS name of the launched EC2 instance
+    Value: !GetAtt EC2Instance.PublicDnsName
+    Export:
+      Name: EC2InstancePublicDNSName
+  
+
+
+
+
+
+
+    

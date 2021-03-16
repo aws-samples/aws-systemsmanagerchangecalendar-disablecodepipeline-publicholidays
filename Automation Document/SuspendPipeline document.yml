@@ -1,0 +1,118 @@
+description: >
+
+  # Suspend CodePipeline
+
+  This document suspends the transition of the pipelines stages created in AWS
+  CodePipeline
+
+
+  ## Parameters
+
+  1. **_AutomationAssumeRole_**: (Optional) Provide the AWS IAM role that
+  automation will use for the execution of the document. For more information,
+  visit  the
+  [link](https://docs.aws.amazon.com/systems-manager/latest/userguide/automation-setup.html) 
+
+
+  2. **_PipelineName_**: (Required) Provide the name of the pipeline in which
+  you want to disable the flow of artifacts from one stage to another.
+
+
+  3. **_StageName_**: (Required) The name of the stage where you want to disable
+  the inbound or outbound transition of artifacts.
+
+
+  4. **_TransitionType_**: (Required) Specifies whether artifacts are prevented
+  from transitioning into the stage and being processed by the actions in that
+  stage (inbound), or prevented from transitioning from the stage after they
+  have been processed by the actions in that stage (outbound). Allowed values
+  are 
+
+  * *Inbound* 
+
+  * *Outbound*
+
+
+  5. **_Reason_**: (Required) The reason given to the user that a stage is
+  disabled, such as waiting for manual approval or manual tests. This message is
+  displayed in the pipeline console UI.
+
+  ---
+assumeRole: '{{AutomationAssumeRole}}'
+schemaVersion: '0.3'
+parameters:
+  AutomationAssumeRole:
+    default: ''
+    description: >-
+      (Optional) IAM role which Automation will assume to execute this automation. For more
+      information, visit -
+      https://docs.aws.amazon.com/systems-manager/latest/userguide/automation-setup.html
+    type: String
+  PipelineName:
+    description: >-
+      (Required) Provide the name of the pipeline in which you want to disable
+      the flow of artifacts from one stage to another.
+    type: String
+  StageName:
+    description: >-
+      (Required) The name of the stage where you want to disable the inbound or
+      outbound transition of artifacts.
+    type: String
+  TransitionType:
+    allowedValues:
+      - Inbound
+      - Outbound
+    description: >-
+      (Required) Specifies whether artifacts are prevented from transitioning
+      into the stage and being processed by the actions in that stage (inbound),
+      or prevented from transitioning from the stage after they have been
+      processed by the actions in that stage (outbound)
+    type: String
+  DesiredState:
+    allowedValues:
+      - Enable
+      - Disable
+    description: Desired state of the pipeline
+    type: String
+  Reason:
+    description: >-
+      (Required) The reason given to the user that a stage is disabled, such as
+      waiting for manual approval or manual tests. This message is displayed in
+      the pipeline console UI.
+    type: String
+    default: Disabled due to Calendar state change
+mainSteps:
+  - name: BranchingOnDesiredState
+    action: 'aws:branch'
+    inputs:
+      Choices:
+        - StringEquals: Enable
+          Variable: '{{DesiredState}}'
+          NextStep: EnablingPipelineTransition
+      Default: SuspendingPipelineTransition
+    onFailure: Abort
+    isCritical: true
+    isEnd: true
+  - name: SuspendingPipelineTransition
+    action: 'aws:executeAwsApi'
+    maxAttempts: 3
+    inputs:
+      pipelineName: '{{PipelineName}}'
+      reason: '{{Reason}}'
+      stageName: '{{StageName}}'
+      Service: codepipeline
+      Api: DisableStageTransition
+      transitionType: '{{TransitionType}}'
+    isCritical: true
+    isEnd: true
+  - name: EnablingPipelineTransition
+    action: 'aws:executeAwsApi'
+    maxAttempts: 3
+    inputs:
+      pipelineName: '{{PipelineName}}'
+      stageName: '{{StageName}}'
+      Service: codepipeline
+      Api: EnableStageTransition
+      transitionType: '{{TransitionType}}'
+    isCritical: true
+    isEnd: true
