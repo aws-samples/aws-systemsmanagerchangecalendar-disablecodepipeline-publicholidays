@@ -12,7 +12,7 @@ Following is the structure of this repository
     ├── Automation Document
     │   └── SuspendCodePipeline.yml
     ├── DeploySimplePipelineS3Bucket
-    │   ├── DeploySimplePipelineS3Bucket.md
+    │   ├── README.md
     │   └── DeploySimplePipelineS3Bucket.yaml
     ├── LICENSE
     ├── Public calendars samples
@@ -47,7 +47,7 @@ Once the stack is deployed successfully, user will be able to access the deploye
 4.	**EC2KeypairName** – Name of EC2 KeyPair
 5.	**AmiId** – AMI ID to launch the instance. By default, AmazonLinux 2 AMI is used.
 
-Refer to read.md for usage instructions.
+Refer to [README](https://github.com/aws-samples/aws-systemsmanagerchangecalendar-disablecodepipeline-publicholidays/blob/main/DeploySimplePipelineS3Bucket/README.md) for usage instructions.
 
 ## Public Calendar samples
 
@@ -57,7 +57,7 @@ This directory contains the following public calendars that can be used as sampl
 2. US Holidays 2021
 3. Weekends 
 
-These calendars can be imported as AWS Systems Manager Change Calendar document using the using the following command:
+These calendars can be imported as AWS Systems Manager Change Calendar document using the using the following command, where ``SampleHolidays2021_AWS.ics`` contains the content from one of the [samples](https://github.com/aws-samples/aws-systemsmanagerchangecalendar-disablecodepipeline-publicholidays/tree/main/Public%20calendars%20samples):
 
 ```
 aws ssm create-document --name PublicHolidays \
