@@ -12,8 +12,8 @@ Once the stack is deployed successfully, user will be able to access the deploye
 1.	*CodePipelineName* – Name of the pipeline to be created
 2.	*PublicSubnetId* -- SubnetID with Internet Access. This access is needed as EC2 instances, created by this template, requires AWS CodeDeploy agent & it's dependencies to be installed. 
 3.	*SecurityGroupId* – The Security Group ID to attach with the instance. This Security Group must allow Outbound internet access on port 80 & 443 and Inbound access on port 80 from your source machine to access the deployed sample application.
-4.	*EC2KeypairName* – Name of EC2 KeyPair
-5.	*AmiId* – AMI ID to launch the instance. By default, AmazonLinux 2 AMI is used.
+4.	*EC2KeypairName* – Name of EC2 KeyPair.
+5.	*AmiId* – AMI ID to launch the instance. By default, AmazonLinux 2 AMI is used. To specify value, a parameter of 'aws:ec2:image' type must be created in AWS Systems Manager Parameter Store. For more details refer to public [documentation](https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-ec2-aliases.html).
 
 ## **Outputs**
 1. SourceS3BucketARN - ARN of the Source S3 Bucket
@@ -85,11 +85,9 @@ Once the stack is deployed successfully, user will be able to access the deploye
 
 - "ssm:GetParameters",
 
-**Note:** 
+**Note:** The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role that AWS CloudFormation assumes to create the stack. AWS CloudFormation uses the role's credentials to make calls on your behalf. AWS CloudFormation always uses this role for all future operations on the stack. As long as users have permission to operate on the stack, AWS CloudFormation uses this role even if the users don't have permission to pass it. Ensure that the role grants least privilege.
 
-*The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role that AWS CloudFormation assumes to create the stack. AWS CloudFormation uses the role's credentials to make calls on your behalf. AWS CloudFormation always uses this role for all future operations on the stack. As long as users have permission to operate on the stack, AWS CloudFormation uses this role even if the users don't have permission to pass it. Ensure that the role grants least privilege.
-
-If you don't specify a value, AWS CloudFormation uses the role that was previously associated with the stack. If no role is available, AWS CloudFormation uses a temporary session that is generated from your user credentials. *
+If you don't specify a value, AWS CloudFormation uses the role that was previously associated with the stack. If no role is available, AWS CloudFormation uses a temporary session that is generated from your user credentials.
 
 ## **Examples**
 
@@ -120,4 +118,21 @@ ParameterKey=EC2KeypairName,ParameterValue=ssh_keypair \
 --region eu-west-1
 ```
 
+Following are the resources that are created by this CloudFormation template:
+| Logical ID | Resource Type |
+| --- | --- |
+| CodeDeployServiceRole | AWS::IAM::Role |
+| CodePipelineServiceRole | AWS::IAM::Role |
+| EC2InstanceProfileRoleForCodeDeploy | AWS::IAM::Role |
+| CodePipelineArtifactStoreS3Bucket | AWS::S3::Bucket |
+| SourceS3Bucket | AWS::S3::Bucket |
+| CodePipelineArtifactStoreS3BucketPolicy | AWS::S3::BucketPolicy |
+| DeploymentGroup | AWS::CodeDeploy::DeploymentGroup |
+| EC2InstanceprofileforCodeDeploy | AWS::IAM::InstanceProfile |
+| SampleCodePipeline | AWS::CodePipeline::Pipeline |
+| EC2Instance | AWS::EC2::Instance |
+
+
+
 Before deleting the CloudFormation stack, you must delete all the objects in the S3 buckets and buckets should be empty. Otherwise, AWS CloudFormation won't be able to delete the bucket.
+

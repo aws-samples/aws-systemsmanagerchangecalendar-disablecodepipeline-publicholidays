@@ -12,7 +12,7 @@ Parameters:
   AmiId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: (Required) AMI Id used to launch the instances. This template uses AmazonLinux2 AMI using SSM parameter Store. Do not modify this value.
+    Description: (Required) AMI Id used to launch the instances. This template uses AmazonLinux2 AMI using SSM parameter Store. To specify value, a parameter of 'aws:ec2:image' type must be created in AWS Systems Manager Parameter Store.
   EC2KeypairName:
     Type: AWS::EC2::KeyPair::KeyName
     Description: (Required) Provide the name of the EC2 Keypair
