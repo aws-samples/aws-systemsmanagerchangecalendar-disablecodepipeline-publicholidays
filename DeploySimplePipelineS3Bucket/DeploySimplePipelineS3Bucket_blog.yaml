@@ -27,7 +27,7 @@ Resources:
     DependsOn: SourceS3Bucket
     Properties: 
       VersioningConfiguration: 
-        Status: Suspended
+        Status: Enabled
   CodePipelineArtifactStoreS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     DependsOn: CodePipelineArtifactStoreS3Bucket
