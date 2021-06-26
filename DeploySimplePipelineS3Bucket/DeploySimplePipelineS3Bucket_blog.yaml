@@ -8,7 +8,7 @@ Parameters:
     Description: (Required) Provide the public SubnetId to launch the EC2 instances. Subnet must have the internet access
   SecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
-    Description: (Required) Provide the Security Group Id to attach with the instances. Secuity Group must allow Ingress/Engress access on port 80 & 443
+    Description: (Required) Provide the Security Group Id to attach with the instances. Security Group must allow Ingress/Egress access on port 80 & 443
   AmiId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
@@ -17,43 +17,101 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     Description: (Required) Provide the name of the EC2 Keypair
 Resources:
+  #-------------------------------------------------
+  # KMS Key used to encrypt S3 Buckets
+  #-------------------------------------------------
+  S3BucketsEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Key used to encrypt S3 buckets
+      Enabled: True
+      EnableKeyRotation: True
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: AccountPolicy
+        Statement:
+        - Sid: Enable IAM User Permissions
+          Effect: Allow
+          Principal:
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+          Action: kms:*
+          Resource: '*'
+  S3BucketsEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/S3BucketsEncryptionKey
+      TargetKeyId: !Ref S3BucketsEncryptionKey
   SourceS3Bucket:
     Type: AWS::S3::Bucket
     Properties: 
       VersioningConfiguration: 
         Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'aws:kms'
+              KMSMasterKeyID: !GetAtt S3BucketsEncryptionKey.Arn
+  SourceS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: SourceS3Bucket
+    Properties:
+      Bucket: !Ref SourceS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Id: PutObjPolicy
+        Statement:
+          - Sid: DenyIncorrectEncryptionHeader
+            Effect: Deny
+            Principal: "*"
+            Action: s3:PutObject
+            Resource: !Join [ '', [ !GetAtt SourceS3Bucket.Arn, '/*' ] ]
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: aws:kms
+          - Sid: DenyUnEncryptedObjectUploads
+            Effect: Deny
+            Principal: "*"
+            Action: s3:PutObject
+            Resource: !Join [ '', [ !GetAtt SourceS3Bucket.Arn, '/*' ] ]
+            Condition:
+              'Null':
+                s3:x-amz-server-side-encryption: 'true'
   CodePipelineArtifactStoreS3Bucket:
     Type: AWS::S3::Bucket
     DependsOn: SourceS3Bucket
     Properties: 
       VersioningConfiguration: 
         Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'aws:kms'
+              KMSMasterKeyID: !GetAtt S3BucketsEncryptionKey.Arn
   CodePipelineArtifactStoreS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     DependsOn: CodePipelineArtifactStoreS3Bucket
     Properties:
       Bucket: !Ref CodePipelineArtifactStoreS3Bucket
       PolicyDocument:
-        Version: 2012-10-17
+        Version: '2012-10-17'
+        Id: PutObjPolicy
         Statement:
-          -
-            Sid: DenyUnEncryptedObjectUploads
+          - Sid: DenyIncorrectEncryptionHeader
             Effect: Deny
-            Principal: '*'
+            Principal: "*"
             Action: s3:PutObject
             Resource: !Join [ '', [ !GetAtt CodePipelineArtifactStoreS3Bucket.Arn, '/*' ] ]
             Condition:
-              StringNotEquals: 
+              StringNotEquals:
                 s3:x-amz-server-side-encryption: aws:kms
-          -
-            Sid: DenyInsecureConnections
+          - Sid: DenyUnEncryptedObjectUploads
             Effect: Deny
-            Principal: '*'
-            Action: s3:*
+            Principal: "*"
+            Action: s3:PutObject
             Resource: !Join [ '', [ !GetAtt CodePipelineArtifactStoreS3Bucket.Arn, '/*' ] ]
             Condition:
-              Bool:
-                aws:SecureTransport: false
+              'Null':
+                s3:x-amz-server-side-encryption: 'true'
   EC2InstanceProfileRoleForCodeDeploy:
     Type: "AWS::IAM::Role"
     Properties:
@@ -142,7 +200,11 @@ Resources:
                   - "s3:GetBucketLocation"
                   - "s3:GetObjectVersion"
                 Effect: Allow
-                Resource: '*'
+                Resource:
+                  - !GetAtt CodePipelineArtifactStoreS3Bucket.Arn
+                  - !Join [ '', [ !GetAtt CodePipelineArtifactStoreS3Bucket.Arn, '/*' ] ]
+                  - !GetAtt SourceS3Bucket.Arn
+                  - !Join [ '', [ !GetAtt SourceS3Bucket.Arn, '/*' ] ]
   EC2Instance:
     Type: AWS::EC2::Instance
     DependsOn: SourceS3Bucket
@@ -174,7 +236,7 @@ Resources:
             ./install auto
             #Downloading & Uploading to S3 as SampleApp_Linux.zip as per the article https://docs.aws.amazon.com/codepipeline/latest/userguide/tutorials-simple-s3.html
             wget https://docs.aws.amazon.com/codepipeline/latest/userguide/samples/SampleApp_Linux.zip
-            aws s3 cp SampleApp_Linux.zip s3://${SourceS3Bucket} --region ${AWS::Region}
+            aws s3 cp SampleApp_Linux.zip s3://${SourceS3Bucket} --region ${AWS::Region} --sse aws:kms
             #Sending signal to CloudFormation
             /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
   CodeDeployApplication:
@@ -240,12 +302,12 @@ Outputs:
     Description: "Source S3 Bucket"
     Value: !GetAtt SourceS3Bucket.Arn
     Export:
-      Name: SourceS3BucketARN
+      Name: !Join [":",[!Ref "AWS::StackName", SourceS3BucketARN ]]
   EC2InstancePublicDNSName:
     Description: Public DNS name of the launched EC2 instance
     Value: !GetAtt EC2Instance.PublicDnsName
     Export:
-      Name: EC2InstancePublicDNSName
+      Name: !Join [":",[!Ref "AWS::StackName", EC2InstancePublicDNSName ]]
   
 
 
