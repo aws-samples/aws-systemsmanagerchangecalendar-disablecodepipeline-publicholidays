@@ -76,6 +76,16 @@ Resources:
             Condition:
               'Null':
                 s3:x-amz-server-side-encryption: 'true'
+          - Sid: DenyAllUnEncryptedRequests
+            Action: s3:*
+            Effect: Deny
+            Principal: "*"
+            Resource:
+              - !GetAtt SourceS3Bucket.Arn
+              - !Join [ '', [ !GetAtt SourceS3Bucket.Arn, '/*' ] ]
+            Condition:
+              Bool:
+                aws:SecureTransport: false
   CodePipelineArtifactStoreS3Bucket:
     Type: AWS::S3::Bucket
     DependsOn: SourceS3Bucket
@@ -112,6 +122,16 @@ Resources:
             Condition:
               'Null':
                 s3:x-amz-server-side-encryption: 'true'
+          - Sid: DenyAllUnEncryptedRequests
+            Action: s3:*
+            Effect: Deny
+            Principal: "*"
+            Resource:
+              - !GetAtt CodePipelineArtifactStoreS3Bucket.Arn
+              - !Join [ '', [ !GetAtt CodePipelineArtifactStoreS3Bucket.Arn, '/*' ] ]
+            Condition:
+              Bool:
+                aws:SecureTransport: false
   EC2InstanceProfileRoleForCodeDeploy:
     Type: "AWS::IAM::Role"
     Properties:

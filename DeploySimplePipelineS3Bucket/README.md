@@ -80,6 +80,9 @@ Once the stack is deployed successfully, user will be able to access the deploye
 - "s3:PutBucketVersioning",
 - "s3:DeleteBucketPolicy",
 - "s3:PutBucketPolicy",
+- "s3:PutEncryptionConfiguration",
+- "s3:GetEncryptionConfiguration",
+
 
 > ssm
 
@@ -87,13 +90,17 @@ Once the stack is deployed successfully, user will be able to access the deploye
 
 > kms
 
-- "kms:CreateKey",
 - "kms:EnableKeyRotation",
-- "kms:GetKeyPolicy",
-- "kms:DescribeKey",
-- "kms:ListResourceTags",
 - "kms:GetKeyRotationStatus",
+- "kms:ScheduleKeyDeletion",
+- "kms:PutKeyPolicy",
+- "kms:GetKeyPolicy",
 - "kms:CreateAlias",
+- "kms:DescribeKey",
+- "kms:CreateKey",
+- "kms:ListResourceTags",
+- "kms:DeleteAlias"
+
 
 **Note:** The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role that AWS CloudFormation assumes to create the stack. AWS CloudFormation uses the role's credentials to make calls on your behalf. AWS CloudFormation always uses this role for all future operations on the stack. As long as users have permission to operate on the stack, AWS CloudFormation uses this role even if the users don't have permission to pass it. Ensure that the role grants least privilege.
 
